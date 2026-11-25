@@ -58,7 +58,7 @@ All camera moves ease (cubic in-out) over 600 ms (200 ms with reduced motion). T
 2. Click the status chip → incident mode jumps to it, or `Ctrl/⌘+K` → type the hostname or alarm text.
 3. The inspector shows **alarms first** (what, why, next step), then CPU/memory/uptime/throughput, then the top three interfaces with down/flapping ones pinned to the top.
 4. Right-click → **Show neighbours** (`N`) dims everything except the blast radius.
-5. Right-click → **Run show command** (`C`) opens a glass terminal with role-appropriate commands (`show interfaces brief`, `show lldp neighbors`, …).
+5. Right-click → **Run show command** (`C`) opens a glass terminal on the device. The command line takes typed commands with network-OS abbreviations (`sh int br`), `Tab` completion, `↑`/`↓` history and built-ins (`help` or `?`, `clear`, `history`, `exit`). Quick-command tabs list the role-appropriate commands. Output is simulated unless a command backend is configured (`?cli=<url>`, see `docs/DATA_MODEL.md`).
 6. **Open SSH session** hands off to the OS `ssh://` handler and offers a *Copy command* fallback.
 
 ### 3.3 Path trace
@@ -134,6 +134,15 @@ The same map is shown in-app by pressing `?` (source: `src/ui/shortcuts.ts`).
 | `N` | Show neighbours |
 | `C` | Run show command |
 | `Y` | Copy IP address |
+
+| Console (when the command line is focused) | |
+|---|---|
+| `Enter` | Run command (abbreviations like `sh int br` work) |
+| `Tab` | Complete; lists options when ambiguous |
+| `↑` `↓` | Command history |
+| `?` (empty line) | List available commands |
+| `Ctrl+L` | Clear transcript |
+| `Esc` | Close console |
 
 | Incidents | |
 |---|---|

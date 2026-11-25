@@ -83,3 +83,19 @@ All scene and UI code reads the network through `Model` (`src/data/model.ts`). A
 2. Call `model.raise({...})` / `model.clear(alarmId)` for alarms. Beacons, rims, status chips, the ticker, incident mode and the alarm tone all follow.
 
 `src/data/telemetry.ts` (the demo simulator) is a complete example of such an adapter. A WebSocket or SSE client that applies deltas in the same way is all a production deployment needs.
+
+## Device console backend
+
+By default the console prints simulated output. To run real commands, pass a backend URL:
+
+```
+https://<host>/?cli=https://your-backend.example/run
+```
+
+For each command the app sends a `POST` with a JSON body, and prints the response body as plain text (non-2xx responses are shown as errors):
+
+```json
+{ "deviceId": "lon-leaf-03", "hostname": "lon-leaf-03", "ip": "172.16.1.33", "command": "show interfaces brief" }
+```
+
+Only commands in the device's command list can be sent; typed input is first resolved against that list, including abbreviations. Your backend should still enforce its own allowlist and authentication: never execute arbitrary input on network devices. If the backend is on another origin, it must allow CORS from the Packet Atlas origin.

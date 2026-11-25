@@ -15,7 +15,7 @@ import { tracePath, type PathResult } from '../core/path';
 import { esc, pct } from '../core/util';
 import { hideTip, icon, installUiTooltips, modKey, showTip, toast } from './dom';
 import { Hud } from './hud';
-import { AnchoredPanel, ConsolePanel, type Anchor } from './panel';
+import { AnchoredPanel, ConsolePanel, type Anchor, type CommandRunner } from './panel';
 import { CommandPalette, type Command } from './palette';
 import { RadialMenu, type RadialItem } from './radial';
 import { Legend, SettingsDrawer, ShortcutOverlay, Tour } from './overlays';
@@ -485,7 +485,21 @@ export class App {
 
   private showCmd(deviceId: string) {
     const d = this.model.devices.get(deviceId)!;
-    this.consolePanel.show(d.hostname, d.ip, showCommands(d), (cmd) => showOutput(this.model, d, cmd), prefs.get('reducedMotion'));
+    // Optional command backend: ?cli=<url> receives a POST per command and returns plain text.
+    const endpoint = new URLSearchParams(location.search).get('cli');
+    const run: CommandRunner = endpoint
+      ? async (command) => {
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ deviceId: d.id, hostname: d.hostname, ip: d.ip, command }),
+          });
+          if (!res.ok) throw new Error(`Command backend returned HTTP ${res.status}`);
+          return res.text();
+        }
+      : (command) => showOutput(this.model, d, command);
+    const banner = endpoint ? `Connected to command backend ${endpoint}. Type "help" for commands.` : 'Simulated output (no command backend configured). Type "help" for commands.';
+    this.consolePanel.show(d.hostname, d.ip, showCommands(d), run, prefs.get('reducedMotion'), { banner });
   }
 
   private neighbours(deviceId: string) {

@@ -29,6 +29,7 @@ npm run preview    # serve the production build
 | Parameter | Effect |
 |---|---|
 | `?topology=<url>` | Load your own topology JSON instead of the demo (see [docs/DATA_MODEL.md](docs/DATA_MODEL.md)). Try `?topology=sample-topology.json`. |
+| `?cli=<url>` | Send console commands to your backend instead of simulating output (see [docs/DATA_MODEL.md](docs/DATA_MODEL.md#device-console-backend)) |
 | `?empty=1` | Start in the empty state |
 | `?wallboard=1` | Start in wallboard mode (automatic on viewports ≥ 2560×1300) |
 | `?tour=1` | Force the guided tour |

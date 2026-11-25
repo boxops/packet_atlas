@@ -4,6 +4,8 @@
  */
 import type * as THREE from 'three';
 import { el, icon } from './dom';
+import { esc } from '../core/util';
+import { BUILTINS, complete, resolveCommand } from '../core/cli';
 
 /** Where a panel attaches: the object's centre, and a point on its right-hand silhouette edge. */
 export interface Anchor {
@@ -148,23 +150,51 @@ export class AnchoredPanel {
   }
 }
 
-/** Docked glass terminal for simulated show commands. */
+/** Runs one resolved command; may be async (e.g. a backend call). */
+export type CommandRunner = (cmd: string) => string | Promise<string>;
+
+/**
+ * Docked glass terminal: a scrolling transcript with a typed command line.
+ * Supports abbreviations ("sh int br"), Tab completion, ↑/↓ history and built-ins
+ * (help, clear, history, exit). The quick-command tabs run through the same path.
+ */
 export class ConsolePanel {
   readonly root: HTMLDivElement;
-  private out: HTMLPreElement;
+  private out: HTMLDivElement;
   private tabs: HTMLDivElement;
   private title: HTMLDivElement;
+  private prompt: HTMLSpanElement;
+  private input: HTMLInputElement;
   private typing = 0;
+  private hostname = '';
+  private commands: string[] = [];
+  private run: CommandRunner = () => '';
+  private instant = false;
+  private history: string[] = [];
+  private histIndex = -1;
+  private draft = '';
+  private busy = false;
 
   constructor(host: HTMLElement) {
     this.root = el('div', 'console glass');
     this.root.setAttribute('role', 'dialog');
-    this.root.setAttribute('aria-label', 'Command output');
-    this.root.innerHTML = `<div class="console-head"><span class="console-icon">${icon('terminal', 14)}</span><div class="console-title"></div><button class="icon-btn small" aria-label="Close console">${icon('close', 14)}</button></div><div class="console-tabs"></div><pre class="console-out" tabindex="0"></pre>`;
+    this.root.setAttribute('aria-label', 'Device console');
+    this.root.innerHTML = `
+      <div class="console-head"><span class="console-icon">${icon('terminal', 14)}</span><div class="console-title"></div><button class="icon-btn small" aria-label="Close console" data-tip="Close" data-key="Esc">${icon('close', 14)}</button></div>
+      <div class="console-tabs"></div>
+      <div class="console-out" role="log" aria-live="polite" tabindex="0"></div>
+      <label class="console-line"><span class="console-prompt mono"></span><input class="console-input mono" type="text" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Command" placeholder="type a command · Tab completes · help" /></label>`;
     this.title = this.root.querySelector('.console-title')!;
     this.tabs = this.root.querySelector('.console-tabs')!;
     this.out = this.root.querySelector('.console-out')!;
+    this.prompt = this.root.querySelector('.console-prompt')!;
+    this.input = this.root.querySelector('.console-input')!;
     this.root.querySelector('button')!.onclick = () => this.hide();
+    this.input.addEventListener('keydown', (e) => this.onKey(e));
+    // Clicking anywhere in the transcript (without selecting text) focuses the prompt.
+    this.out.addEventListener('mouseup', () => {
+      if (!window.getSelection()?.toString()) this.input.focus();
+    });
     host.appendChild(this.root);
   }
 
@@ -172,38 +202,128 @@ export class ConsolePanel {
     return this.root.classList.contains('open');
   }
 
-  show(hostname: string, ip: string, commands: string[], run: (cmd: string) => string, instant: boolean) {
-    this.title.innerHTML = `<span class="mono">${hostname}</span><span class="muted mono"> · ${ip}</span>`;
+  /** Open the console for a device. Switching devices starts a fresh transcript. */
+  show(hostname: string, ip: string, commands: string[], run: CommandRunner, instant: boolean, opts: { autorun?: boolean; banner?: string } = {}) {
+    const sameDevice = this.open && hostname === this.hostname;
+    this.hostname = hostname;
+    this.commands = commands;
+    this.run = run;
+    this.instant = instant;
+    this.title.innerHTML = `<span class="mono">${esc(hostname)}</span><span class="muted mono"> · ${esc(ip)}</span>`;
+    this.prompt.textContent = `${hostname}#`;
     this.tabs.innerHTML = '';
-    const exec = (cmd: string) => {
-      this.tabs.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.textContent === cmd));
-      const text = `${hostname}# ${cmd}\n${run(cmd)}\n`;
-      clearInterval(this.typing);
-      if (instant) {
-        this.out.textContent = text;
-        return;
-      }
-      // Fast "typing" reveal (~250 ms) for a live-terminal feel, never blocking.
-      let i = 0;
-      const chunk = Math.max(8, Math.ceil(text.length / 16));
-      this.out.textContent = '';
-      this.typing = window.setInterval(() => {
-        i += chunk;
-        this.out.textContent = text.slice(0, i);
-        if (i >= text.length) clearInterval(this.typing);
-      }, 16);
-    };
     for (const c of commands) {
-      const b = el('button', 'tab mono', c);
-      b.onclick = () => exec(c);
+      const b = el('button', 'tab mono');
+      b.textContent = c;
+      b.onclick = () => void this.exec(c);
       this.tabs.appendChild(b);
     }
     this.root.classList.add('open');
-    exec(commands[0]);
+    if (!sameDevice) {
+      clearInterval(this.typing);
+      this.out.innerHTML = '';
+      if (opts.banner) this.print(opts.banner, 'cl-note');
+      if (opts.autorun !== false) void this.exec(commands[0]);
+    }
+    this.input.focus({ preventScroll: true });
   }
 
   hide() {
     clearInterval(this.typing);
     this.root.classList.remove('open');
+    if (this.root.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
+  }
+
+  private print(text: string, cls: string, animate = false): HTMLPreElement {
+    const block = el('pre', `cl-block ${cls}`);
+    this.out.appendChild(block);
+    // Keep the transcript bounded.
+    while (this.out.childElementCount > 300) this.out.firstElementChild!.remove();
+    if (!animate || this.instant) {
+      block.textContent = text;
+      this.out.scrollTop = this.out.scrollHeight;
+      return block;
+    }
+    // Fast reveal (~250 ms) for a live-terminal feel; never blocks typing.
+    clearInterval(this.typing);
+    let i = 0;
+    const chunk = Math.max(8, Math.ceil(text.length / 16));
+    this.typing = window.setInterval(() => {
+      i += chunk;
+      block.textContent = text.slice(0, i);
+      this.out.scrollTop = this.out.scrollHeight;
+      if (i >= text.length) clearInterval(this.typing);
+    }, 16);
+    return block;
+  }
+
+  private async exec(raw: string) {
+    const typed = raw.trim();
+    this.print(`${this.hostname}# ${typed}`, 'cl-cmd');
+    if (!typed) return;
+    if (this.history.at(-1) !== typed) this.history.push(typed);
+    if (this.history.length > 100) this.history.shift();
+    this.histIndex = -1;
+
+    const word = typed.toLowerCase();
+    if (word === 'help' || word === '?') {
+      const list = this.commands.map((c) => `  ${c}`).join('\n');
+      return void this.print(`Available commands:\n${list}\n\nBuilt-ins: help, clear, history, exit\nAbbreviations work: "sh int br". Tab completes, ↑/↓ recall history.`, 'cl-out');
+    }
+    if (word === 'clear' || word === 'cls') return void (this.out.innerHTML = '');
+    if (word === 'history') return void this.print(this.history.map((h, i) => `${String(i + 1).padStart(4)}  ${h}`).join('\n'), 'cl-out');
+    if (word === 'exit' || word === 'quit' || word === 'logout') return this.hide();
+
+    const r = resolveCommand(typed, this.commands);
+    if (!r.ok) return void this.print(r.error, 'cl-err');
+    this.tabs.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.textContent === r.cmd));
+    const pending = this.print('…', 'cl-out cl-pending');
+    this.busy = true;
+    try {
+      const text = await this.run(r.cmd);
+      pending.remove();
+      this.print(text, 'cl-out', true);
+    } catch (err) {
+      pending.remove();
+      this.print(`% ${(err as Error).message || 'Command failed'}`, 'cl-err');
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  private onKey(e: KeyboardEvent) {
+    const inp = this.input;
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (this.busy) return;
+      const v = inp.value;
+      inp.value = '';
+      void this.exec(v);
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      const c = complete(inp.value, [...this.commands, ...BUILTINS]);
+      inp.value = c.value;
+      if (c.options.length) this.print(c.options.join('    '), 'cl-note');
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!this.history.length) return;
+      if (this.histIndex === -1) this.draft = inp.value;
+      const n = this.history.length;
+      if (e.key === 'ArrowUp') this.histIndex = this.histIndex === -1 ? n - 1 : Math.max(0, this.histIndex - 1);
+      else this.histIndex = this.histIndex === -1 ? -1 : this.histIndex + 1 >= n ? -1 : this.histIndex + 1;
+      inp.value = this.histIndex === -1 ? this.draft : this.history[this.histIndex];
+      requestAnimationFrame(() => inp.setSelectionRange(inp.value.length, inp.value.length));
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      this.hide();
+    } else if (e.key === 'l' && e.ctrlKey) {
+      e.preventDefault();
+      this.out.innerHTML = '';
+    } else if (e.key === '?' && !inp.value.trim()) {
+      // Network-OS habit: a bare "?" lists commands immediately.
+      e.preventDefault();
+      void this.exec('?');
+    }
   }
 }
