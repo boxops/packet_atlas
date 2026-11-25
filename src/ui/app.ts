@@ -317,7 +317,15 @@ export class App {
     let hoverQueued = false;
     let lastMove = { x: 0, y: 0 };
 
-    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    // Suppress the browser's own context menu app-wide. On Windows `contextmenu` fires on
+    // mouse *up*, after the radial menu has already opened under the cursor, so guarding only
+    // the canvas let the native menu (Inspect, View Page Source…) appear on top of it.
+    // Text areas keep the native menu so copy/paste still works there.
+    document.addEventListener('contextmenu', (e) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest('input, textarea, [contenteditable="true"], .panel-body, .console-out')) return;
+      e.preventDefault();
+    });
     canvas.addEventListener('pointerdown', (e) => {
       down = { x: e.clientX, y: e.clientY, t: performance.now(), button: e.button, type: e.pointerType };
       hideTip();
