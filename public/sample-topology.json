@@ -1,0 +1,36 @@
+{
+  "sites": [
+    { "id": "dub", "name": "Dublin", "code": "dub", "region": "EMEA", "racks": [{ "id": "dub-r1", "name": "Rack 1" }, { "id": "dub-r2", "name": "Rack 2" }] },
+    { "id": "par", "name": "Paris", "code": "par", "region": "EMEA", "racks": [{ "id": "par-r1", "name": "Rack 1" }] }
+  ],
+  "devices": [
+    { "id": "dub-rtr-01", "hostname": "dub-rtr-01", "role": "router", "siteId": "dub", "ip": "10.10.0.1" },
+    { "id": "dub-fw-01", "hostname": "dub-fw-01", "role": "firewall", "siteId": "dub", "ip": "10.10.0.2" },
+    { "id": "dub-leaf-01", "hostname": "dub-leaf-01", "role": "switch", "siteId": "dub", "rackId": "dub-r1", "ip": "10.10.1.1" },
+    { "id": "dub-leaf-02", "hostname": "dub-leaf-02", "role": "switch", "siteId": "dub", "rackId": "dub-r2", "ip": "10.10.2.1" },
+    { "id": "dub-srv-01", "hostname": "dub-srv-01", "role": "server", "siteId": "dub", "rackId": "dub-r1", "ip": "10.10.1.10", "cpu": 0.42 },
+    { "id": "dub-srv-02", "hostname": "dub-srv-02", "role": "server", "siteId": "dub", "rackId": "dub-r2", "ip": "10.10.2.10", "reachable": false },
+    { "id": "par-rtr-01", "hostname": "par-rtr-01", "role": "router", "siteId": "par", "ip": "10.20.0.1" },
+    { "id": "par-leaf-01", "hostname": "par-leaf-01", "role": "switch", "siteId": "par", "rackId": "par-r1", "ip": "10.20.1.1" },
+    { "id": "par-srv-01", "hostname": "par-srv-01", "role": "server", "siteId": "par", "rackId": "par-r1", "ip": "10.20.1.10" }
+  ],
+  "links": [
+    { "id": "l1", "a": { "deviceId": "dub-rtr-01", "iface": "xe-0/0/1" }, "b": { "deviceId": "dub-fw-01", "iface": "ethernet1/1" }, "capacityGbps": 40, "util": 0.35 },
+    { "id": "l2", "a": { "deviceId": "dub-fw-01", "iface": "ethernet1/2" }, "b": { "deviceId": "dub-leaf-01", "iface": "Eth1/49" }, "capacityGbps": 100, "util": 0.5 },
+    { "id": "l3", "a": { "deviceId": "dub-fw-01", "iface": "ethernet1/3" }, "b": { "deviceId": "dub-leaf-02", "iface": "Eth1/49" }, "capacityGbps": 100, "util": 0.2 },
+    { "id": "l4", "a": { "deviceId": "dub-leaf-01", "iface": "Eth1/1" }, "b": { "deviceId": "dub-srv-01", "iface": "ens1f0" }, "capacityGbps": 25, "util": 0.6 },
+    { "id": "l5", "a": { "deviceId": "dub-leaf-02", "iface": "Eth1/1" }, "b": { "deviceId": "dub-srv-02", "iface": "ens1f0" }, "capacityGbps": 25 },
+    { "id": "l6", "a": { "deviceId": "dub-rtr-01", "iface": "xe-0/0/0" }, "b": { "deviceId": "par-rtr-01", "iface": "xe-0/0/0" }, "capacityGbps": 100, "util": 0.92 },
+    { "id": "l7", "a": { "deviceId": "par-rtr-01", "iface": "xe-0/0/1" }, "b": { "deviceId": "par-leaf-01", "iface": "Eth1/49" }, "capacityGbps": 100, "util": 0.3 },
+    { "id": "l8", "a": { "deviceId": "par-leaf-01", "iface": "Eth1/1" }, "b": { "deviceId": "par-srv-01", "iface": "ens1f0" }, "capacityGbps": 25, "util": 0.15 }
+  ],
+  "alarms": [
+    {
+      "id": "a1", "severity": "critical", "targetType": "device", "targetId": "dub-srv-02", "siteId": "dub",
+      "title": "Device unreachable: dub-srv-02",
+      "explanation": "No response to ICMP or SNMP for 3 minutes.",
+      "action": "Check the out-of-band console.",
+      "raisedAt": 1764000000000
+    }
+  ]
+}
